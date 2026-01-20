@@ -25,9 +25,30 @@ ai-agents/
 ## 開発規約
 
 ### エージェント作成時
-- 各エージェントは `agents/{agent_name}/` 配下に独立して配置
-- エージェントごとに `README.md` で目的・使い方を記述
-- 共通ツールは `shared/tools/` に配置し再利用可能にする
+
+新しいエージェントは `agents/{agent_name}/` 配下に独立したディレクトリとして作成する。
+
+#### ディレクトリ構成
+
+```
+agents/{agent_name}/
+├── __init__.py           # パッケージ初期化
+├── state.py              # 状態スキーマ（Pydantic BaseModel）
+├── nodes.py              # ノード関数（各処理ステップ）
+├── graph.py              # LangGraphワークフロー定義
+├── README.md             # エージェントの説明・使い方
+└── example.py            # 実行サンプル（任意）
+```
+
+#### 各ファイルの役割
+
+- **state.py**: 入力・出力・中間状態のスキーマを定義
+- **nodes.py**: グラフの各ノードで実行される関数を実装
+- **graph.py**: StateGraphでワークフローを構築、`app = compile_graph()` でエクスポート
+- **README.md**: 目的、アーキテクチャ図、使い方、入出力パラメータを記述
+
+#### 共通ツール
+- 複数エージェントで使うツールは `shared/tools/` に配置し再利用可能にする
 
 ### コーディングスタイル
 - 型ヒントを必須とする
@@ -39,6 +60,30 @@ ai-agents/
 - ノード関数は単一責任の原則に従う
 - 状態スキーマは `TypedDict` または `Pydantic BaseModel` で定義
 - グラフ構築は `StateGraph` を使用
+
+#### アーキテクチャ図の作成
+
+READMEにはMermaid形式でグラフ図を記載する。LangGraphの `draw_mermaid()` で自動生成可能:
+
+```python
+from agents.{agent_name}.graph import app
+print(app.get_graph().draw_mermaid())
+```
+
+出力例をREADMEに貼り付け:
+
+````markdown
+```mermaid
+graph TD;
+    __start__([__start__])
+    node1(node1<br/>説明)
+    node2(node2<br/>説明)
+    __end__([__end__])
+    __start__ --> node1;
+    node1 --> node2;
+    node2 --> __end__;
+```
+````
 
 ## コマンド
 
