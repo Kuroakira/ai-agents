@@ -36,7 +36,8 @@ agents/{agent_name}/
 ├── state.py              # 状態スキーマ（Pydantic BaseModel）
 ├── nodes.py              # ノード関数（各処理ステップ）
 ├── graph.py              # LangGraphワークフロー定義
-├── README.md             # エージェントの説明・使い方
+├── README.md             # エージェントの説明・使い方（日本語）
+├── README.en.md          # エージェントの説明・使い方（英語）
 └── example.py            # 実行サンプル（任意）
 ```
 
@@ -45,7 +46,11 @@ agents/{agent_name}/
 - **state.py**: 入力・出力・中間状態のスキーマを定義
 - **nodes.py**: グラフの各ノードで実行される関数を実装
 - **graph.py**: StateGraphでワークフローを構築、`app = compile_graph()` でエクスポート
-- **README.md**: 目的、アーキテクチャ図、使い方、入出力パラメータを記述
+- **README.md / README.en.md**: 目的、アーキテクチャ図、使い方、入出力パラメータを記述（日本語・英語両方を必ず作成）
+
+#### ドキュメント規約
+- **多言語対応**: READMEは日本語版（`README.md`）と英語版（`README.en.md`）の両方を必ず作成する
+- プロジェクトルートの`README.md`/`README.en.md`も同様に両言語で管理する
 
 #### 共通ツール
 - 複数エージェントで使うツールは `shared/tools/` に配置し再利用可能にする
