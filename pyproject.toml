@@ -9,6 +9,11 @@ dependencies = [
     "langchain>=0.3",
     "langchain-google-genai>=2.0",
     "python-dotenv>=1.0",
+    # Scheduler Agent dependencies
+    "slack-bolt>=1.18",
+    "google-api-python-client>=2.0",
+    "google-auth-httplib2>=0.2",
+    "google-auth-oauthlib>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -16,6 +21,9 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.8",
 ]
+
+[tool.setuptools.packages.find]
+include = ["agents*", "shared*"]
 
 [tool.ruff]
 target-version = "py311"
