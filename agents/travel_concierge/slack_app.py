@@ -107,7 +107,7 @@ def process_message(session: ThreadSession, message: str) -> tuple[str, bool]:
         session.state = TravelConciergeState(**result)
 
         # フェーズに応じた処理
-        current_phase = result.get("phase", Phase.INTERVIEWING)
+        current_phase = result.get("phase", Phase.PLANNING)
         response_text = result.get("response_text", "")
         is_completed = False
 
@@ -121,7 +121,7 @@ def process_message(session: ThreadSession, message: str) -> tuple[str, bool]:
             # 継続実行（最大10回までのループ制限）
             max_iterations = 10
             iteration = 0
-            while current_phase not in (Phase.INTERVIEWING, Phase.COMPLETED):
+            while current_phase not in (Phase.PLANNING, Phase.COMPLETED):
                 iteration += 1
                 if iteration > max_iterations:
                     logger.error(f"Max iterations reached: {iteration}")

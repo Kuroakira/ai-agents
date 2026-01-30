@@ -14,6 +14,29 @@ from agents.travel_concierge.state import (
 )
 
 
+def is_day_trip(context: TravelContext) -> bool:
+    """日帰り旅行かどうかを判定.
+
+    Args:
+        context: 旅行要件コンテキスト
+
+    Returns:
+        bool: 日帰りの場合True
+    """
+    if not context.timing:
+        return False
+
+    timing_lower = context.timing.lower()
+    day_trip_keywords = [
+        "日帰り",
+        "ひがえり",
+        "daytrip",
+        "day trip",
+        "日帰",
+    ]
+    return any(keyword in timing_lower for keyword in day_trip_keywords)
+
+
 def get_tavily_client() -> TavilyClient:
     """Tavilyクライアントを取得.
 
@@ -180,6 +203,65 @@ def search_accommodations(context: TravelContext) -> list[dict]:
     return response.get("results", [])
 
 
+def search_activities(context: TravelContext) -> list[dict]:
+    """日帰り向けアクティビティ・スポットを検索.
+
+    Args:
+        context: 旅行要件コンテキスト
+
+    Returns:
+        list[dict]: 検索結果リスト
+    """
+    client = get_tavily_client()
+    constraints_str = " ".join(context.constraints) if context.constraints else ""
+
+    # 子連れの場合は検索条件に追加
+    family_hint = ""
+    if context.travelers and context.travelers.children > 0:
+        family_hint = "子連れ ファミリー 子供"
+
+    query = (
+        f'"{context.destination}" {family_hint} {constraints_str} '
+        f"日帰り 体験 アクティビティ スポット おすすめ"
+    )
+
+    response = client.search(
+        query=query,
+        search_depth="advanced",
+        max_results=5,
+        include_answer=True,
+    )
+
+    return response.get("results", [])
+
+
+def search_day_trip_info(context: TravelContext) -> list[dict]:
+    """日帰り旅行の基本情報を検索.
+
+    Args:
+        context: 旅行要件コンテキスト
+
+    Returns:
+        list[dict]: 検索結果リスト
+    """
+    client = get_tavily_client()
+    user_location = get_user_location()
+
+    query = (
+        f'"{context.destination}" {user_location}から 日帰り '
+        f"アクセス 所要時間 駐車場 おすすめ時期"
+    )
+
+    response = client.search(
+        query=query,
+        search_depth="basic",
+        max_results=5,
+        include_answer=True,
+    )
+
+    return response.get("results", [])
+
+
 def create_notion_page(
     title: str,
     context: TravelContext,
@@ -224,6 +306,9 @@ def _build_notion_blocks(
     """
     blocks = []
 
+    # 日帰りかどうかでアイコンを変更
+    trip_icon = "🚗" if research.is_day_trip else "✈️"
+
     # サマリー（Callout）
     if research.summary:
         blocks.append(
@@ -234,7 +319,7 @@ def _build_notion_blocks(
                     "rich_text": [
                         {"type": "text", "text": {"content": research.summary}}
                     ],
-                    "icon": {"emoji": "✈️"},
+                    "icon": {"emoji": trip_icon},
                 },
             }
         )
@@ -345,8 +430,45 @@ def _build_notion_blocks(
                 }
             )
 
-    # 宿泊施設
-    if research.accommodations:
+    # 日帰りの場合: アクティビティ・スポット
+    if research.is_day_trip and research.activities:
+        blocks.append(
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [
+                        {"type": "text", "text": {"content": "🎯 おすすめスポット・アクティビティ"}}
+                    ],
+                },
+            }
+        )
+
+        for act in research.activities:
+            act_text = f"**{act.name}**"
+            if act.features:
+                act_text += f"\n  特徴: {', '.join(act.features)}"
+            if act.access:
+                act_text += f"\n  🚃 アクセス: {act.access}"
+            if act.price_hint:
+                act_text += f"\n  💰 料金目安: {act.price_hint}"
+            if act.recommendation:
+                act_text += f"\n  💡 {act.recommendation}"
+            if act.url:
+                act_text += f"\n  🔗 {act.url}"
+
+            blocks.append(
+                {
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": [{"type": "text", "text": {"content": act_text}}],
+                    },
+                }
+            )
+
+    # 宿泊旅行の場合: 宿泊施設
+    elif not research.is_day_trip and research.accommodations:
         blocks.append(
             {
                 "object": "block",

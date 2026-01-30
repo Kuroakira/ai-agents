@@ -12,10 +12,17 @@ from pydantic import BaseModel, Field
 class Phase(str, Enum):
     """エージェントの処理フェーズ."""
 
-    INTERVIEWING = "interviewing"
-    RESEARCHING = "researching"
-    PUBLISHING = "publishing"
+    PLANNING = "planning"  # Plannerによる一次受付・プラン提案
+    RESEARCHING = "researching"  # 詳細調査
+    PUBLISHING = "publishing"  # Notion出力
     COMPLETED = "completed"
+
+
+class TripType(str, Enum):
+    """旅行タイプ."""
+
+    DAY_TRIP = "day_trip"  # 日帰り
+    OVERNIGHT = "overnight"  # 宿泊
 
 
 class Travelers(BaseModel):
@@ -78,6 +85,17 @@ class AccommodationInfo(BaseModel):
     recommendation: str | None = Field(default=None, description="AIの推薦コメント")
 
 
+class ActivityInfo(BaseModel):
+    """アクティビティ・スポット情報（日帰り向け）."""
+
+    name: str = Field(..., description="スポット名・アクティビティ名")
+    url: str | None = Field(default=None, description="URL")
+    features: list[str] = Field(default_factory=list, description="特徴・楽しめること")
+    access: str | None = Field(default=None, description="アクセス情報")
+    price_hint: str | None = Field(default=None, description="料金目安")
+    recommendation: str | None = Field(default=None, description="AIの推薦コメント")
+
+
 class ResearchResult(BaseModel):
     """調査結果."""
 
@@ -85,8 +103,12 @@ class ResearchResult(BaseModel):
         default_factory=list, description="時期・相場オプション"
     )
     accommodations: list[AccommodationInfo] = Field(
-        default_factory=list, description="宿泊施設リスト"
+        default_factory=list, description="宿泊施設リスト（宿泊旅行用）"
     )
+    activities: list[ActivityInfo] = Field(
+        default_factory=list, description="アクティビティ・スポットリスト（日帰り用）"
+    )
+    is_day_trip: bool = Field(default=False, description="日帰り旅行かどうか")
     summary: str | None = Field(default=None, description="調査サマリー")
 
 
@@ -102,7 +124,15 @@ class TravelConciergeState(BaseModel):
     """
 
     # 現在のフェーズ
-    phase: Phase = Field(default=Phase.INTERVIEWING, description="現在の処理フェーズ")
+    phase: Phase = Field(default=Phase.PLANNING, description="現在の処理フェーズ")
+
+    # 旅行タイプ（Plannerが決定）
+    trip_type: TripType | None = Field(default=None, description="旅行タイプ（日帰り/宿泊）")
+
+    # Plannerの提案理由
+    planner_recommendation: str | None = Field(
+        default=None, description="Plannerによる旅行タイプ提案の理由"
+    )
 
     # ヒアリング結果
     travel_context: TravelContext = Field(
