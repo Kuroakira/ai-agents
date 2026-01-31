@@ -81,6 +81,12 @@ class AccommodationInfo(BaseModel):
 
     name: str = Field(..., description="宿名")
     url: str | None = Field(default=None, description="URL")
+    price_range: str | None = Field(
+        default=None, description="価格帯（例: ¥15,000〜25,000/人）"
+    )
+    price_category: str | None = Field(
+        default=None, description="価格カテゴリ（budget/standard/premium）"
+    )
     features: list[str] = Field(default_factory=list, description="特徴")
     recommendation: str | None = Field(default=None, description="AIの推薦コメント")
 
@@ -94,6 +100,28 @@ class ActivityInfo(BaseModel):
     access: str | None = Field(default=None, description="アクセス情報")
     price_hint: str | None = Field(default=None, description="料金目安")
     recommendation: str | None = Field(default=None, description="AIの推薦コメント")
+    special_point: str | None = Field(
+        default=None, description="旅行者に合わせた特別ポイント"
+    )
+
+
+class ModelCourseStep(BaseModel):
+    """モデルコースの1ステップ."""
+
+    time: str = Field(..., description="時間（例: 9:00）")
+    title: str = Field(..., description="やること（例: 出発！）")
+    description: str = Field(..., description="詳細説明・子供の楽しみポイント")
+    tips: str | None = Field(default=None, description="親向けTips（駐車場、トイレ等）")
+
+
+class ModelCourse(BaseModel):
+    """モデルコース（タイムライン）."""
+
+    title: str = Field(..., description="コースタイトル")
+    steps: list[ModelCourseStep] = Field(
+        default_factory=list, description="タイムライン"
+    )
+    total_budget: str | None = Field(default=None, description="総予算目安")
 
 
 class ResearchResult(BaseModel):
@@ -108,6 +136,7 @@ class ResearchResult(BaseModel):
     activities: list[ActivityInfo] = Field(
         default_factory=list, description="アクティビティ・スポットリスト（日帰り用）"
     )
+    model_course: ModelCourse | None = Field(default=None, description="モデルコース")
     is_day_trip: bool = Field(default=False, description="日帰り旅行かどうか")
     summary: str | None = Field(default=None, description="調査サマリー")
 
@@ -127,7 +156,9 @@ class TravelConciergeState(BaseModel):
     phase: Phase = Field(default=Phase.PLANNING, description="現在の処理フェーズ")
 
     # 旅行タイプ（Plannerが決定）
-    trip_type: TripType | None = Field(default=None, description="旅行タイプ（日帰り/宿泊）")
+    trip_type: TripType | None = Field(
+        default=None, description="旅行タイプ（日帰り/宿泊）"
+    )
 
     # Plannerの提案理由
     planner_recommendation: str | None = Field(

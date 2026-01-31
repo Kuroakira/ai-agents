@@ -189,14 +189,16 @@ def search_accommodations(context: TravelContext) -> list[dict]:
     if context.travelers and context.travelers.children > 0:
         family_hint = "子連れ ファミリー"
 
+    # 価格情報も取得できるようにクエリを調整
     query = (
-        f'"{context.destination}" {family_hint} {constraints_str} 旅館 ホテル おすすめ'
+        f'"{context.destination}" {family_hint} {constraints_str} '
+        f"旅館 ホテル 宿泊 料金 価格 おすすめ 比較"
     )
 
     response = client.search(
         query=query,
         search_depth="advanced",
-        max_results=5,
+        max_results=7,  # より多くの結果を取得
         include_answer=True,
     )
 
@@ -220,15 +222,16 @@ def search_activities(context: TravelContext) -> list[dict]:
     if context.travelers and context.travelers.children > 0:
         family_hint = "子連れ ファミリー 子供"
 
+    # 料金・アクセス情報も取得できるようにクエリを調整
     query = (
         f'"{context.destination}" {family_hint} {constraints_str} '
-        f"日帰り 体験 アクティビティ スポット おすすめ"
+        f"観光 スポット 入場料 料金 アクセス おすすめ"
     )
 
     response = client.search(
         query=query,
         search_depth="advanced",
-        max_results=5,
+        max_results=7,  # より多くの結果を取得
         include_answer=True,
     )
 
@@ -397,7 +400,7 @@ def _build_notion_blocks(
             }
         )
 
-    # 時期・相場
+    # 時期・相場（安い時期の情報）
     if research.timing_options:
         blocks.append(
             {
@@ -414,9 +417,9 @@ def _build_notion_blocks(
         for timing in research.timing_options:
             timing_text = f"**{timing.period}** - {timing.price_estimate}"
             if timing.advantages:
-                timing_text += f"\n  メリット: {', '.join(timing.advantages)}"
+                timing_text += f"\n  ✅ メリット: {', '.join(timing.advantages)}"
             if timing.disadvantages:
-                timing_text += f"\n  デメリット: {', '.join(timing.disadvantages)}"
+                timing_text += f"\n  ⚠️ デメリット: {', '.join(timing.disadvantages)}"
 
             blocks.append(
                 {
@@ -430,15 +433,82 @@ def _build_notion_blocks(
                 }
             )
 
-    # 日帰りの場合: アクティビティ・スポット
-    if research.is_day_trip and research.activities:
+    # 宿泊旅行の場合: 宿泊施設（価格帯別）- モデルコースより先に表示
+    if not research.is_day_trip and research.accommodations:
         blocks.append(
             {
                 "object": "block",
                 "type": "heading_2",
                 "heading_2": {
                     "rich_text": [
-                        {"type": "text", "text": {"content": "🎯 おすすめスポット・アクティビティ"}}
+                        {"type": "text", "text": {"content": "🏨 宿泊施設一覧"}}
+                    ],
+                },
+            }
+        )
+
+        # 価格カテゴリ順にソート（budget → standard → premium）
+        category_order = {"budget": 0, "standard": 1, "premium": 2}
+        sorted_accommodations = sorted(
+            research.accommodations,
+            key=lambda x: category_order.get(x.price_category or "standard", 1),
+        )
+
+        # 価格カテゴリのラベル
+        category_labels = {
+            "budget": "💚 リーズナブル",
+            "standard": "💙 スタンダード",
+            "premium": "💜 プレミアム",
+        }
+
+        current_category = None
+        for acc in sorted_accommodations:
+            # カテゴリが変わったらサブ見出しを追加
+            if acc.price_category and acc.price_category != current_category:
+                current_category = acc.price_category
+                label = category_labels.get(current_category, current_category)
+                blocks.append(
+                    {
+                        "object": "block",
+                        "type": "heading_3",
+                        "heading_3": {
+                            "rich_text": [{"type": "text", "text": {"content": label}}],
+                        },
+                    }
+                )
+
+            acc_text = f"**{acc.name}**"
+            if acc.price_range:
+                acc_text += f"\n  💰 {acc.price_range}"
+            if acc.features:
+                acc_text += f"\n  特徴: {', '.join(acc.features)}"
+            if acc.recommendation:
+                acc_text += f"\n  💡 {acc.recommendation}"
+            if acc.url:
+                acc_text += f"\n  🔗 {acc.url}"
+
+            blocks.append(
+                {
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": [{"type": "text", "text": {"content": acc_text}}],
+                    },
+                }
+            )
+
+    # アクティビティ・スポット - モデルコースより先に表示（日帰り・宿泊共通）
+    if research.activities:
+        blocks.append(
+            {
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [
+                        {
+                            "type": "text",
+                            "text": {"content": "🎯 おすすめスポット・アクティビティ"},
+                        }
                     ],
                 },
             }
@@ -448,6 +518,8 @@ def _build_notion_blocks(
             act_text = f"**{act.name}**"
             if act.features:
                 act_text += f"\n  特徴: {', '.join(act.features)}"
+            if act.special_point:
+                act_text += f"\n  ⭐ {act.special_point}"
             if act.access:
                 act_text += f"\n  🚃 アクセス: {act.access}"
             if act.price_hint:
@@ -467,35 +539,53 @@ def _build_notion_blocks(
                 }
             )
 
-    # 宿泊旅行の場合: 宿泊施設
-    elif not research.is_day_trip and research.accommodations:
+    # モデルコース（タイムライン）- 最後に表示
+    if research.model_course:
         blocks.append(
             {
                 "object": "block",
                 "type": "heading_2",
                 "heading_2": {
                     "rich_text": [
-                        {"type": "text", "text": {"content": "🏨 おすすめ宿泊施設"}}
+                        {
+                            "type": "text",
+                            "text": {"content": f"🗺️ {research.model_course.title}"},
+                        }
                     ],
                 },
             }
         )
 
-        for acc in research.accommodations:
-            acc_text = f"**{acc.name}**"
-            if acc.features:
-                acc_text += f"\n  特徴: {', '.join(acc.features)}"
-            if acc.recommendation:
-                acc_text += f"\n  💡 {acc.recommendation}"
-            if acc.url:
-                acc_text += f"\n  🔗 {acc.url}"
+        # タイムラインをステップごとに表示
+        for step in research.model_course.steps:
+            step_text = f"**{step.time}** {step.title}"
+            if step.description:
+                step_text += f"\n  {step.description}"
+            if step.tips:
+                step_text += f"\n  💡 {step.tips}"
 
             blocks.append(
                 {
                     "object": "block",
                     "type": "bulleted_list_item",
                     "bulleted_list_item": {
-                        "rich_text": [{"type": "text", "text": {"content": acc_text}}],
+                        "rich_text": [{"type": "text", "text": {"content": step_text}}],
+                    },
+                }
+            )
+
+        # 総予算目安
+        if research.model_course.total_budget:
+            budget_text = f"💰 総予算目安: {research.model_course.total_budget}"
+            blocks.append(
+                {
+                    "object": "block",
+                    "type": "callout",
+                    "callout": {
+                        "rich_text": [
+                            {"type": "text", "text": {"content": budget_text}}
+                        ],
+                        "icon": {"emoji": "💰"},
                     },
                 }
             )

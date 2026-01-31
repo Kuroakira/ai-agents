@@ -53,18 +53,64 @@ def get_session(thread_ts: str) -> ThreadSession | None:
     return thread_sessions.get(thread_ts)
 
 
-def create_session(channel_id: str, thread_ts: str) -> ThreadSession:
+def create_session(
+    channel_id: str, thread_ts: str, client=None
+) -> ThreadSession:
     """新しいスレッドセッションを作成.
 
     Args:
         channel_id: チャンネルID
         thread_ts: スレッドのタイムスタンプ
+        client: Slackクライアント（スレッド履歴取得用）
 
     Returns:
         ThreadSession: 新しいセッション
     """
+    state = TravelConciergeState()
+
+    # スレッド内の過去のメッセージを取得して会話履歴を復元
+    if client:
+        try:
+            result = client.conversations_replies(
+                channel=channel_id,
+                ts=thread_ts,
+                limit=50,  # 最大50件
+            )
+            messages = result.get("messages", [])
+            bot_user_id = None
+
+            # Bot自身のユーザーIDを取得
+            try:
+                auth_result = client.auth_test()
+                bot_user_id = auth_result.get("user_id")
+            except Exception:
+                pass
+
+            # メッセージを会話履歴に追加
+            for msg in messages:
+                text = msg.get("text", "")
+                user = msg.get("user", "")
+
+                # メンション部分を除去
+                text = re.sub(r"<@[A-Z0-9]+>", "", text).strip()
+                if not text:
+                    continue
+
+                # Botのメッセージかユーザーのメッセージかを判定
+                if bot_user_id and user == bot_user_id:
+                    state.messages.append({"role": "assistant", "content": text})
+                elif not msg.get("bot_id"):  # Botでなければユーザー
+                    state.messages.append({"role": "user", "content": text})
+
+            if state.messages:
+                logger.info(
+                    f"Restored {len(state.messages)} messages from thread"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to restore thread history: {e}")
+
     session = ThreadSession(
-        state=TravelConciergeState(),
+        state=state,
         channel_id=channel_id,
         thread_ts=thread_ts,
     )
@@ -125,16 +171,22 @@ def process_message(session: ThreadSession, message: str) -> tuple[str, bool]:
                 iteration += 1
                 if iteration > max_iterations:
                     logger.error(f"Max iterations reached: {iteration}")
-                    response_text = "⚠️ 処理がタイムアウトしました。もう一度お試しください。"
+                    response_text = (
+                        "⚠️ 処理がタイムアウトしました。もう一度お試しください。"
+                    )
                     is_completed = True
                     break
 
                 try:
-                    logger.info(f"Processing iteration {iteration}, phase: {current_phase}")
+                    logger.info(
+                        f"Processing iteration {iteration}, phase: {current_phase}"
+                    )
                     result = travel_app.invoke(TravelConciergeState(**result))
                     current_phase = result.get("phase", Phase.COMPLETED)
                 except Exception as loop_error:
-                    logger.error(f"Error in processing loop: {loop_error}", exc_info=True)
+                    logger.error(
+                        f"Error in processing loop: {loop_error}", exc_info=True
+                    )
                     response_text = f"⚠️ 処理中にエラーが発生しました: {loop_error}"
                     is_completed = True
                     break
@@ -181,19 +233,25 @@ def handle_mention(event: dict, say, client) -> None:
 
     logger.info(f"Mention from {user_id}: {text}")
 
-    # スレッド内のメッセージの場合、既存セッションを探す
+    # スレッド内のメッセージの場合、既存セッションを探すか新規作成
     if thread_ts:
         session = get_session(thread_ts)
-        if session:
-            # 既存セッションで継続
-            response, is_completed = process_message(session, text)
-            say(text=response, thread_ts=thread_ts)
+        if not session:
+            # スレッド内だがセッションがない場合（アプリ再起動後など）
+            # 新しいセッションを作成してthread_tsをキーにする
+            # clientを渡してスレッド履歴を復元
+            logger.warning(f"Session not found: {thread_ts}, creating new")
+            session = create_session(channel_id, thread_ts, client)
 
-            if is_completed:
-                delete_session(thread_ts)
-            return
+        # 既存セッション（または新規作成したセッション）で継続
+        response, is_completed = process_message(session, text)
+        say(text=response, thread_ts=thread_ts)
 
-    # 新しいスレッドを開始
+        if is_completed:
+            delete_session(thread_ts)
+        return
+
+    # 新しいスレッドを開始（thread_tsがない場合のみ）
     # まず最初のメッセージを送信してスレッドを作成
     client.chat_postMessage(
         channel=channel_id,
@@ -204,8 +262,8 @@ def handle_mention(event: dict, say, client) -> None:
     # スレッドのtsを取得（親メッセージのts = thread_ts）
     new_thread_ts = message_ts
 
-    # セッションを作成
-    session = create_session(channel_id, new_thread_ts)
+    # セッションを作成（新規スレッドなので履歴復元は不要だがclientを渡す）
+    session = create_session(channel_id, new_thread_ts, client)
 
     # メッセージを処理
     response, is_completed = process_message(session, text)
@@ -265,7 +323,7 @@ def handle_message(event: dict, say, client) -> None:
         # DMでは各メッセージを独立したスレッドとして扱う
         # または、ユーザーごとに1つのセッションを維持することも可能
         # ここではDMでもスレッドを使用
-        session = create_session(channel_id, message_ts)
+        session = create_session(channel_id, message_ts, client)
         response, is_completed = process_message(session, text)
         say(text=response, thread_ts=message_ts)
 
