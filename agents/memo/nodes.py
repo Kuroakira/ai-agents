@@ -3,8 +3,6 @@
 各処理ステップを実装するノード関数群。
 """
 
-from functools import lru_cache
-
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -17,9 +15,12 @@ from agents.memo.tools import (
 )
 
 
-@lru_cache(maxsize=1)
 def get_llm() -> ChatGoogleGenerativeAI:
-    """LLMインスタンスを遅延初期化で取得する.
+    """LLMインスタンスを取得する.
+
+    Note:
+        asyncio.run()で毎回イベントループが作成・破棄されるため、
+        キャッシュせずに毎回新しいインスタンスを生成する。
 
     Returns:
         ChatGoogleGenerativeAI: Gemini 2.5 Flashモデル
