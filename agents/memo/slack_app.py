@@ -6,7 +6,9 @@ Slack BotをSocket Modeで起動し、メモを受け取ってNotionに保存す
 import asyncio
 import logging
 import os
+import threading
 from collections import OrderedDict
+from concurrent.futures import Future
 
 from dotenv import load_dotenv
 from slack_bolt import App
@@ -29,6 +31,41 @@ slack_app = App(token=os.environ.get("MEMO_SLACK_BOT_TOKEN"))
 # 最大100件を保持
 _processed_messages: OrderedDict[str, bool] = OrderedDict()
 MAX_CACHE_SIZE = 100
+
+# 永続イベントループ用のグローバル変数
+_async_loop: asyncio.AbstractEventLoop | None = None
+_async_thread: threading.Thread | None = None
+
+
+def _start_async_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """バックグラウンドスレッドでイベントループを実行.
+
+    Args:
+        loop: 実行するイベントループ
+    """
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+
+def _get_or_create_async_loop() -> asyncio.AbstractEventLoop:
+    """永続イベントループを取得または作成.
+
+    Returns:
+        永続的に実行されているイベントループ
+    """
+    global _async_loop, _async_thread
+
+    if _async_loop is None or not _async_loop.is_running():
+        _async_loop = asyncio.new_event_loop()
+        _async_thread = threading.Thread(
+            target=_start_async_loop,
+            args=(_async_loop,),
+            daemon=True,
+        )
+        _async_thread.start()
+        logger.info("Started persistent async event loop in background thread")
+
+    return _async_loop
 
 
 def _is_already_processed(message_ts: str) -> bool:
@@ -56,6 +93,8 @@ def _is_already_processed(message_ts: str) -> bool:
 def run_async_graph(input_text: str) -> dict:
     """非同期グラフを同期的に実行.
 
+    永続的なイベントループを使用して、Event loop is closedエラーを回避する。
+
     Args:
         input_text: ユーザー入力テキスト
 
@@ -67,7 +106,9 @@ def run_async_graph(input_text: str) -> dict:
     async def _run():
         return await memo_app.ainvoke(initial_state)
 
-    return asyncio.run(_run())
+    loop = _get_or_create_async_loop()
+    future: Future = asyncio.run_coroutine_threadsafe(_run(), loop)
+    return future.result(timeout=120)  # 2分タイムアウト
 
 
 @slack_app.event("message")
